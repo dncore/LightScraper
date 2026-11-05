@@ -1,0 +1,31 @@
+# Wails build output
+build/bin/
+
+# Frontend dependencies and build output
+node_modules/
+frontend/dist/
+frontend/package.json.md5
+
+# Local databases and SQLite WAL files
+*.db
+*.db-shm
+*.db-wal
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Test and profiling output
+coverage.out
+*.test
+*.prof
+
+# Logs
+*.log
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

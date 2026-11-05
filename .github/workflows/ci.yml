@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Go tests and formatting
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.x'
+          cache: true
+
+      - name: Install Linux desktop dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Download Go modules
+        run: go mod download
+
+      - name: Check Go formatting
+        run: test -z "$(gofmt -l main.go internal)"
+
+      - name: Vet Go packages
+        run: go vet -tags webkit2_41 ./...
+
+      - name: Run Go tests
+        run: go test -tags webkit2_41 ./...
+
+  frontend:
+    name: Frontend typecheck, format, and build
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Build frontend
+        run: npm run build
+
+  desktop-build:
+    name: Build ${{ matrix.name }}
+    needs:
+      - backend
+      - frontend
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux amd64
+            os: ubuntu-24.04
+            platform: linux/amd64
+          - name: macOS arm64
+            os: macos-14
+            platform: darwin/arm64
+          - name: Windows amd64
+            os: windows-latest
+            platform: windows/amd64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.x'
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Add Go bin to PATH
+        shell: bash
+        run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.17.1
+
+      - name: Install Linux desktop dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build desktop application
+        run: wails build -platform "${{ matrix.platform }}" -clean
