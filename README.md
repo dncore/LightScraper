@@ -195,12 +195,13 @@ belong in this repository.
 | Platform | Build | Actual launch |
 | --- | --- | --- |
 | Linux amd64 | Verified locally | Verified locally |
-| macOS arm64 | CI matrix configured; not verified locally | Not verified |
-| Windows amd64 | CI matrix configured; not verified locally | Not verified |
+| macOS arm64 | Built by CI; not verified locally | Not launched |
+| Windows amd64 | Built by CI; not verified locally | Not launched |
 
 "Verified locally" means the command was run in this checkout and the window
-was started. The CI matrix is a build check, not a substitute for a manual
-launch on macOS or Windows.
+was started. The macOS and Windows entries are build results from the
+GitHub-hosted CI matrix, not from a local machine. The CI matrix is a build
+check, not a substitute for a manual launch on macOS or Windows.
 
 ## Known limitations
 
