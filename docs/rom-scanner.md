@@ -125,6 +125,11 @@ is no default or hardcoded extension table.
   file such as `notes.txt` is still considered when `.txt` is advertised.
 - The scanner only calls read/stat/readdir operations. It never writes,
   renames, moves, deletes, or changes permissions on a ROM or Batocera file.
+- `os.DirEntry.Type()` and `IsDir()` are not trusted for type decisions.
+  Linux filesystems can report `DT_UNKNOWN`; every root and recursive entry is
+  classified with `Lstat` (which does not follow symlinks). If that `Lstat`
+  fails after enumeration, the entry is skipped with an `entry_stat_failed`
+  issue instead of being silently treated as a non-ROM file.
 - Systems are sorted by ID; ROM entries are sorted by normalized relative path
   (with `AbsolutePath` as a tie-breaker). Extension sets are sorted.
 
@@ -162,7 +167,7 @@ include:
 | `info_symlink` | `_info.txt` was a symlink and was not followed |
 | `info_not_regular` | `_info.txt` was not a regular file |
 | `walk_error` | a directory could not be read during recursion |
-| `entry_stat_failed` | a matching file disappeared or could not be statted |
+| `entry_stat_failed` | a root or recursive entry disappeared or could not be statted |
 
 An issue is not a fatal error for the whole scan; other systems continue.
 
@@ -175,8 +180,9 @@ The package tests use temporary directories and generated fixture files:
   Unicode/space paths, hidden entries, `bios`, control files, empty systems,
   and missing/no-match cases;
 - missing, invalid, unreadable, non-regular, and symlinked `_info.txt`;
-- file-stat failure after enumeration, directory-read failure, root symlink,
-  descendant file/directory symlinks, and a symlink loop;
+- file-stat failure after enumeration, directory-read failure, unknown
+  `DirEntry.Type()` values (DT_UNKNOWN simulation) at the root and inside a
+  system, root symlink, descendant file/directory symlinks, and a symlink loop;
 - context cancellation before and during traversal;
 - stable ordering;
 - read-only snapshot comparison before/after scanning.

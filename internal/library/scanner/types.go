@@ -41,7 +41,9 @@ type ROMEntry struct {
 }
 
 // ScanIssue describes a non-fatal problem encountered while scanning a system
-// or one of its files. Root-level failures are returned as errors instead.
+// or one of its files. Root-level failures that prevent the scan from starting
+// are returned as errors; root entries that disappear during discovery are
+// reported with an empty SystemID and PhaseSystem.
 type ScanIssue struct {
 	SystemID string
 	Path     string

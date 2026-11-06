@@ -121,11 +121,28 @@ func scanWithOps(ctx context.Context, root string, ops fileOps) (result ScanResu
 			state.stats.SkippedHidden++
 			continue
 		}
-		if entry.Type()&os.ModeSymlink != 0 {
+
+		fullPath := filepath.Join(absoluteRoot, name)
+		info, statErr := ops.Lstat(fullPath)
+		if statErr != nil {
+			if ctx.Err() != nil {
+				result.Cancelled = true
+				finishResult(&result, state.stats)
+				return result, ctx.Err()
+			}
+			result.Issues = append(result.Issues, ScanIssue{
+				Path:    fullPath,
+				Phase:   PhaseSystem,
+				Kind:    IssueEntryStat,
+				Message: "could not stat root entry: " + statErr.Error(),
+			})
+			continue
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
 			state.stats.SkippedSymlinks++
 			continue
 		}
-		if !entry.IsDir() {
+		if !info.IsDir() {
 			continue
 		}
 		if strings.EqualFold(name, "bios") {
@@ -133,7 +150,7 @@ func scanWithOps(ctx context.Context, root string, ops fileOps) (result ScanResu
 			continue
 		}
 
-		systemResult, scanErr := state.scanSystem(ctx, name, filepath.Join(absoluteRoot, name))
+		systemResult, scanErr := state.scanSystem(ctx, name, fullPath)
 		result.Systems = append(result.Systems, systemResult)
 		result.Issues = append(result.Issues, systemResult.Issues...)
 		if scanErr != nil {
@@ -279,19 +296,27 @@ func (s *scanner) walk(
 			s.stats.SkippedHidden++
 			continue
 		}
-		if entry.Type()&os.ModeSymlink != 0 {
+
+		fullPath := filepath.Join(dir, name)
+		info, err := s.ops.Lstat(fullPath)
+		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			s.addIssue(result, fullPath, PhaseStat, IssueEntryStat, "could not stat directory entry: "+err.Error())
+			continue
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
 			s.stats.SkippedSymlinks++
 			continue
 		}
-
-		fullPath := filepath.Join(dir, name)
-		if entry.IsDir() {
+		if info.IsDir() {
 			if err := s.walk(ctx, result, systemRoot, fullPath, extensions); err != nil {
 				return err
 			}
 			continue
 		}
-		if !entry.Type().IsRegular() {
+		if !info.Mode().IsRegular() {
 			continue
 		}
 		if isControlFile(name) {
@@ -300,22 +325,6 @@ func (s *scanner) walk(
 
 		extension := strings.ToLower(filepath.Ext(name))
 		if _, supported := extensions[extension]; !supported {
-			continue
-		}
-
-		info, err := s.ops.Lstat(fullPath)
-		if err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			s.addIssue(result, fullPath, PhaseStat, IssueEntryStat, "could not stat matching ROM file: "+err.Error())
-			continue
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			s.stats.SkippedSymlinks++
-			continue
-		}
-		if !info.Mode().IsRegular() {
 			continue
 		}
 

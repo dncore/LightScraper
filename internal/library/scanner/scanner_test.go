@@ -132,6 +132,50 @@ func TestScanMultipleSystems(t *testing.T) {
 	}
 }
 
+func TestScanUsesLstatForUnknownDirEntryTypes(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, filepath.Join(root, "nes", "_info.txt"), infoFor(".nes"))
+	writeTestFile(t, filepath.Join(root, "nes", "Game.nes"), "rom")
+	writeTestFile(t, filepath.Join(root, "nes", "sub", "Nested.nes"), "nested")
+
+	result, err := scanWithOps(context.Background(), root, unknownTypeOps{})
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if len(result.Systems) != 1 {
+		t.Fatalf("expected root system to be discovered despite unknown DirEntry type, got %v", systemIDs(result.Systems))
+	}
+	system := requireSystem(t, result, "nes")
+	if got := romNames(system.ROMs); !reflect.DeepEqual(got, []string{"Game.nes", "Nested.nes"}) {
+		t.Fatalf("expected files in root and nested systems despite unknown DirEntry type, got %v", got)
+	}
+	if len(result.Issues) != 0 {
+		t.Fatalf("expected no issues, got %v", result.Issues)
+	}
+}
+
+func TestRootEntryLstatFailureIsRecorded(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, filepath.Join(root, "nes", "_info.txt"), infoFor(".nes"))
+	writeTestFile(t, filepath.Join(root, "nes", "Game.nes"), "rom")
+	target := filepath.Join(root, "nes")
+
+	result, err := scanWithOps(context.Background(), root, statFailOps{target: target})
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if len(result.Systems) != 0 {
+		t.Fatalf("expected no systems after root entry stat failure, got %v", systemIDs(result.Systems))
+	}
+	if len(result.Issues) != 1 {
+		t.Fatalf("expected one root issue, got %v", result.Issues)
+	}
+	issue := result.Issues[0]
+	if issue.SystemID != "" || issue.Path != target || issue.Phase != PhaseSystem || issue.Kind != IssueEntryStat {
+		t.Fatalf("unexpected root issue: %+v", issue)
+	}
+}
+
 func TestScanNoMatchingFiles(t *testing.T) {
 	root := t.TempDir()
 	writeTestFile(t, filepath.Join(root, "nes", "_info.txt"), infoFor(".nes"))
@@ -613,4 +657,40 @@ func snapshotTree(t *testing.T, root string) map[string]treeSnapshot {
 		t.Fatalf("snapshot tree: %v", err)
 	}
 	return snapshots
+}
+
+type unknownDirEntry struct {
+	name string
+}
+
+func (e unknownDirEntry) Name() string {
+	return e.name
+}
+
+func (e unknownDirEntry) IsDir() bool {
+	return false
+}
+
+func (e unknownDirEntry) Type() fs.FileMode {
+	return fs.ModeIrregular
+}
+
+func (e unknownDirEntry) Info() (fs.FileInfo, error) {
+	return nil, errors.New("DirEntry.Info must not be used by the scanner")
+}
+
+type unknownTypeOps struct {
+	osFileOps
+}
+
+func (o unknownTypeOps) ReadDir(name string) ([]os.DirEntry, error) {
+	entries, err := o.osFileOps.ReadDir(name)
+	if err != nil {
+		return nil, err
+	}
+	unknown := make([]os.DirEntry, 0, len(entries))
+	for _, entry := range entries {
+		unknown = append(unknown, unknownDirEntry{name: entry.Name()})
+	}
+	return unknown, nil
 }
