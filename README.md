@@ -2,12 +2,13 @@
 
 LightScraper is a local-first desktop game library manager for retro game
 collectors. This repository currently contains the **LS-T001 desktop
-foundation**: a Wails + React + TypeScript application with a minimal Go
-bridge, a background event demo, and an initialized SQLite database.
+foundation** (Wails + React + TypeScript, minimal Go bridge, background event
+demo, initialized SQLite) and the **LS-T002 standalone ROM scanner** (read-only,
+in-memory Batocera directory scanning; not yet wired to the UI or database).
 
-ROM scanning, Batocera system detection, `gamelist.xml` handling, metadata
-providers, media download, and the full product UI are intentionally **not**
-implemented in this task.
+`gamelist.xml` handling, metadata providers, media download, and the full
+product UI are not implemented yet. See
+[`docs/rom-scanner.md`](docs/rom-scanner.md) for the scanner boundary.
 
 ## Stack
 
@@ -55,6 +56,8 @@ only that metadata table; business schemas will be added by later tasks.
 │   └── migrations/                 Embedded, ordered SQL migrations
 ├── internal/logging/               slog setup
 ├── internal/version/               Build-time name/version/commit metadata
+├── internal/library/scanner/       Read-only Batocera ROM directory scanner
+├── docs/rom-scanner.md             Scanner semantics, evidence, and limitations
 ├── frontend/                       React + TypeScript source and Wails bindings
 ├── build/                          Wails platform metadata and app icons
 ├── .github/workflows/ci.yml        Tests, formatting, and platform build matrix
@@ -190,6 +193,17 @@ The application does not intentionally log database paths, environment
 contents, API keys, or user data. No real ROMs, credentials, or databases
 belong in this repository.
 
+## ROM library scanner
+
+LS-T002 provides a standalone read-only scanner in
+`internal/library/scanner`. It reads Batocera `_info.txt` extension metadata,
+finds matching regular files recursively, and returns in-memory results with
+structured issues. It is not wired into the UI or database.
+
+See [`docs/rom-scanner.md`](docs/rom-scanner.md) for the exact input semantics,
+official `_info.txt` evidence, path/symlink policy, error model, and known
+limitations.
+
 ## Current verification status
 
 | Platform | Build | Actual launch |
@@ -224,6 +238,6 @@ check, not a substitute for a manual launch on macOS or Windows.
 
 ## Task boundary
 
-This repository must not add ROM scanning, ScreenScraper or other providers,
-media downloads, `gamelist.xml` writes, worker pools, or a full library UI
-until a later task explicitly authorizes it.
+LS-T002 adds only the standalone ROM scanner. It does not add ScreenScraper or
+other providers, media downloads, `gamelist.xml` writes, database library
+tables, worker pools, or a full library UI. Those require a later task.
