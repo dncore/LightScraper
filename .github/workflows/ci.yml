@@ -81,7 +81,7 @@ jobs:
             os: ubuntu-24.04
             platform: linux/amd64
           - name: macOS arm64
-            os: macos-14
+            os: macos-15
             platform: darwin/arm64
           - name: Windows amd64
             os: windows-latest
