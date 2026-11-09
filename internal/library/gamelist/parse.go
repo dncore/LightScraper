@@ -280,8 +280,16 @@ func parseXML(data []byte) (*element, error) {
 			if err != nil {
 				return nil, err
 			}
-			if endName.Namespace != current.qname.Namespace || endName.Local != current.qname.Local {
+			// XML end tags must match the original QName, not merely the
+			// expanded {namespace URI}local name. Prefixes are part of the
+			// source document and are preserved by this package's splice
+			// model, so a different prefix must be rejected even when it is
+			// bound to the same URI.
+			if typed.Name.Space != current.qname.Prefix || typed.Name.Local != current.qname.Local {
 				return nil, fmt.Errorf("%w: mismatched end element </%s> for <%s>", ErrInvalidXML, typed.Name.Local, current.qname.String())
+			}
+			if endName.Namespace != current.qname.Namespace {
+				return nil, fmt.Errorf("%w: end element namespace changed for <%s>", ErrInvalidXML, current.qname.String())
 			}
 			stack = stack[:len(stack)-1]
 

@@ -915,20 +915,66 @@ func TestSetFieldEscapesXMLText(t *testing.T) {
 	}
 }
 
-func TestNamespaceEndTagUsesExpandedName(t *testing.T) {
-	data := []byte(`<a:gameList xmlns:a="urn:test" xmlns:b="urn:test"><a:game><a:path>./x.nes</a:path><a:name>X</a:name></b:game></b:gameList>`)
-	doc, err := Parse(t.TempDir(), data)
-	if err != nil {
-		t.Fatalf("Parse: %v", err)
+func TestNamespaceEndTagRequiresRawQName(t *testing.T) {
+	accepted := []struct {
+		name string
+		data string
+	}{
+		{
+			name: "same prefixed QName",
+			data: `<a:gameList xmlns:a="urn:test" xmlns:b="urn:test"><a:game><a:path>./x.nes</a:path><a:name>X</a:name></a:game></a:gameList>`,
+		},
+		{
+			name: "default namespace",
+			data: `<gameList xmlns="urn:test"><game><path>./x.nes</path><name>X</name></game></gameList>`,
+		},
 	}
-	if doc.EntryCount() != 1 {
-		t.Fatalf("EntryCount = %d", doc.EntryCount())
+	for _, test := range accepted {
+		t.Run("accept/"+test.name, func(t *testing.T) {
+			doc, err := Parse(t.TempDir(), []byte(test.data))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			if doc.EntryCount() != 1 {
+				t.Fatalf("EntryCount = %d", doc.EntryCount())
+			}
+			if err := doc.SetField(0, "name", 0, "Y"); err != nil {
+				t.Fatalf("SetField: %v", err)
+			}
+			if _, err := doc.Marshal(); err != nil {
+				t.Fatalf("Marshal: %v", err)
+			}
+		})
 	}
-	if err := doc.SetField(0, "name", 0, "Y"); err != nil {
-		t.Fatalf("SetField: %v", err)
+
+	rejected := []struct {
+		name string
+		data string
+	}{
+		{
+			name: "different prefix same URI",
+			data: `<a:gameList xmlns:a="urn:test" xmlns:b="urn:test"><a:game><a:path>./x.nes</a:path><a:name>X</a:name></b:game></a:gameList>`,
+		},
+		{
+			name: "different prefix different URI",
+			data: `<a:gameList xmlns:a="urn:test" xmlns:b="urn:other"><a:game><a:path>./x.nes</a:path><a:name>X</a:name></b:game></a:gameList>`,
+		},
+		{
+			name: "different local name",
+			data: `<a:gameList xmlns:a="urn:test"><a:game><a:path>./x.nes</a:path></a:folder></a:gameList>`,
+		},
+		{
+			name: "different root prefix same URI",
+			data: `<a:gameList xmlns:a="urn:test" xmlns:b="urn:test"></b:gameList>`,
+		},
 	}
-	if _, err := doc.Marshal(); err != nil {
-		t.Fatalf("Marshal: %v", err)
+	for _, test := range rejected {
+		t.Run("reject/"+test.name, func(t *testing.T) {
+			_, err := Parse(t.TempDir(), []byte(test.data))
+			if !errors.Is(err, ErrInvalidXML) {
+				t.Fatalf("Parse = %v, want ErrInvalidXML", err)
+			}
+		})
 	}
 }
 

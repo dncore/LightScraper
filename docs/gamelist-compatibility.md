@@ -59,6 +59,9 @@ Parsing uses `encoding/xml.Decoder.RawToken` with:
 - explicit UTF-8 BOM handling;
 - byte offset tracking via `InputOffset`;
 - manual start/end element pairing and depth checks;
+- start/end tags must match the original QName (prefix + local name), not
+  merely the expanded namespace URI + local name; namespace URI resolution is
+  still verified independently;
 - exact root and single-root checks;
 - attribute duplicate checks;
 - namespace scope resolution (URI + local name) while retaining raw prefixes;
