@@ -3,12 +3,16 @@
 LightScraper is a local-first desktop game library manager for retro game
 collectors. This repository currently contains the **LS-T001 desktop
 foundation** (Wails + React + TypeScript, minimal Go bridge, background event
-demo, initialized SQLite) and the **LS-T002 standalone ROM scanner** (read-only,
-in-memory Batocera directory scanning; not yet wired to the UI or database).
+demo, initialized SQLite), the **LS-T002 standalone ROM scanner** (read-only,
+in-memory Batocera directory scanning), and the **LS-T003-A gamelist.xml core**
+(strict in-memory parsing, source-preserving views and local edits; no disk
+writes yet).
 
-`gamelist.xml` handling, metadata providers, media download, and the full
+`gamelist.xml` persistence, metadata providers, media download, and the full
 product UI are not implemented yet. See
-[`docs/rom-scanner.md`](docs/rom-scanner.md) for the scanner boundary.
+[`docs/rom-scanner.md`](docs/rom-scanner.md) for the scanner boundary and
+[`docs/gamelist-compatibility.md`](docs/gamelist-compatibility.md) for the
+gamelist boundary.
 
 ## Stack
 
@@ -57,7 +61,9 @@ only that metadata table; business schemas will be added by later tasks.
 ├── internal/logging/               slog setup
 ├── internal/version/               Build-time name/version/commit metadata
 ├── internal/library/scanner/       Read-only Batocera ROM directory scanner
+├── internal/library/gamelist/      Source-preserving gamelist.xml parser/editor (T003-A)
 ├── docs/rom-scanner.md             Scanner semantics, evidence, and limitations
+├── docs/gamelist-compatibility.md  gamelist XML/namespace/path preservation boundary
 ├── frontend/                       React + TypeScript source and Wails bindings
 ├── build/                          Wails platform metadata and app icons
 ├── .github/workflows/ci.yml        Tests, formatting, and platform build matrix
@@ -204,6 +210,18 @@ See [`docs/rom-scanner.md`](docs/rom-scanner.md) for the exact input semantics,
 official `_info.txt` evidence, path/symlink policy, error model, and known
 limitations.
 
+## gamelist.xml core
+
+LS-T003-A adds `internal/library/gamelist`, a strict UTF-8 parser and
+source-span editor for Batocera/EmulationStation `gamelist.xml`. It preserves
+the original bytes, including BOM, namespaces, comments, CDATA, unknown nodes
+and attributes, duplicates and formatting; field edits are applied by byte
+splice in memory. It only reads `<systemDir>/gamelist.xml` and deliberately has
+no Save/write path yet.
+
+See [`docs/gamelist-compatibility.md`](docs/gamelist-compatibility.md) for the
+upstream evidence, fixture provenance, API, path semantics and T003-A limits.
+
 ## Current verification status
 
 | Platform | Build | Actual launch |
@@ -238,6 +256,7 @@ check, not a substitute for a manual launch on macOS or Windows.
 
 ## Task boundary
 
-LS-T002 adds only the standalone ROM scanner. It does not add ScreenScraper or
-other providers, media downloads, `gamelist.xml` writes, database library
-tables, worker pools, or a full library UI. Those require a later task.
+LS-T002 adds the standalone ROM scanner. LS-T003-A adds only the in-memory
+gamelist parser/editor and its documentation; it does not add disk writes,
+ScreenScraper or other providers, media downloads, database library tables,
+worker pools, or a full library UI. Those require later tasks.

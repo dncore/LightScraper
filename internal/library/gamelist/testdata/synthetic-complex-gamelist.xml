@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- top-level comment -->
+<gameList xmlns="urn:lightscraper:test" xmlns:es="urn:lightscraper:es" parentHash="12345" custom="root">
+  <game id="42" custom="game">
+    <path>./Game &amp; One.nes</path>
+    <name>Game &lt;One&gt;</name>
+    <desc><![CDATA[Line <one> & two]]></desc>
+    <name>Duplicate Name</name>
+    <unknown foo="bar"><nested>keep</nested></unknown>
+    <selfclose/>
+    <empty></empty>
+    <selfempty/>
+    <scrap name="ScreenScraper" date="2024-01-02T03:04:05"/>
+    <es:custom es:attr="v">pre<![CDATA[<mid>]]>post</es:custom>
+    <!-- inside comment -->
+    <desc>second description</desc>
+  </game>
+  <folder>
+    <path>.</path>
+    <name>Folder</name>
+  </folder>
+  <futureEntry mode="x"><payload>keep</payload></futureEntry>
+</gameList>
