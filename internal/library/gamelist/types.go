@@ -1,13 +1,16 @@
-// Package gamelist provides a read-only, source-preserving view of an
+// Package gamelist provides a source-preserving view and safe writer for an
 // EmulationStation/Batocera gamelist.xml document.
 //
-// T003-A deliberately does not write files. Parse and Load only read and index
-// the original bytes; SetField and AddField record in-memory edits; Marshal
-// applies those edits to a copy of the original bytes and returns the result.
+// Parse/Load index the original bytes without modifying them. SetField and
+// AddField record in-memory edits; Marshal applies those edits to a copy of the
+// original bytes. Save writes only the private <systemDir>/gamelist.xml target
+// via a same-directory temporary file and an exclusive backup.
 package gamelist
 
 import (
 	"errors"
+	"os"
+	"time"
 )
 
 // Sentinel errors returned by Load, Parse, SetField, AddField and Marshal.
@@ -31,6 +34,38 @@ var (
 	ErrInvalidFieldName    = errors.New("gamelist: invalid field name")
 	ErrInvalidValue        = errors.New("gamelist: value is not valid UTF-8/XML text")
 	ErrEdit                = errors.New("gamelist: edit could not be applied")
+
+	ErrSaveNoSource               = errors.New("gamelist: document has no loaded source file")
+	ErrInvalidSaveOptions         = errors.New("gamelist: invalid save options")
+	ErrSaveTarget                 = errors.New("gamelist: save target is not the loaded gamelist.xml")
+	ErrSourceMissing              = errors.New("gamelist: source file disappeared")
+	ErrSourceChanged              = errors.New("gamelist: source content changed")
+	ErrSourceReplaced             = errors.New("gamelist: source path refers to a different file")
+	ErrSourceMetadataChanged      = errors.New("gamelist: source metadata changed")
+	ErrSourcePermission           = errors.New("gamelist: source permission changed")
+	ErrSourceChangedDuringLoad    = errors.New("gamelist: source changed during load")
+	ErrSystemDirChangedDuringLoad = errors.New("gamelist: system directory changed during load")
+	ErrSystemDirMissing           = errors.New("gamelist: system directory disappeared")
+	ErrSystemDirChanged           = errors.New("gamelist: system directory identity changed")
+	ErrSystemDirNotDir            = errors.New("gamelist: system directory is not a directory")
+	ErrSaveMarshal                = errors.New("gamelist: marshal validation failed")
+	ErrTempCreate                 = errors.New("gamelist: cannot create temporary file")
+	ErrTempWrite                  = errors.New("gamelist: cannot write temporary file")
+	ErrTempSync                   = errors.New("gamelist: cannot sync temporary file")
+	ErrTempValidate               = errors.New("gamelist: temporary file validation failed")
+	ErrTempMetadata               = errors.New("gamelist: cannot preserve temporary-file metadata")
+	ErrBackupExists               = errors.New("gamelist: backup path already exists")
+	ErrBackup                     = errors.New("gamelist: cannot create backup")
+	ErrDirSyncBeforeReplace       = errors.New("gamelist: cannot persist backup directory entry")
+	ErrDirSyncAfterReplace        = errors.New("gamelist: cannot persist replaced directory entry")
+	ErrDirSyncUnsupported         = errors.New("gamelist: directory sync is unsupported")
+	ErrReplace                    = errors.New("gamelist: cannot replace gamelist.xml")
+	ErrReplaceReportedFailure     = errors.New("gamelist: replace reported failure but target is new")
+	ErrSnapshotRefreshFailed      = errors.New("gamelist: cannot refresh document snapshot")
+	ErrPostCommitVerify           = errors.New("gamelist: cannot verify target after replace")
+	ErrCommitUnknown              = errors.New("gamelist: cannot determine replace result")
+	ErrDocumentStale              = errors.New("gamelist: document snapshot is stale")
+	ErrCleanup                    = errors.New("gamelist: cannot remove temporary file")
 )
 
 // QName identifies an XML element or attribute by its original prefix, its
@@ -125,7 +160,7 @@ type PathInfo struct {
 
 // Document is an in-memory, source-preserving view of one gamelist.xml.
 // SourceHash is the SHA-256 of the exact bytes supplied to Parse or read by
-// Load. The original bytes and edit spans are private.
+// Load. The original bytes, edit spans and loaded-file identity are private.
 type Document struct {
 	Path           string
 	SystemDir      string
@@ -138,6 +173,18 @@ type Document struct {
 	source []byte
 	refs   []entryRef
 	edits  []edit
+
+	loadedPath     string
+	loadedDir      string
+	loadedFileInfo os.FileInfo
+	loadedHash     [32]byte
+	loadedSize     int64
+	loadedMode     os.FileMode
+	loadedMtime    time.Time
+	loadedDirInfo  os.FileInfo
+	ops            saveOperations
+	stale          bool
+	staleReason    error
 }
 
 // entryRef maps a public Entry back to its parsed source element and fields.
@@ -175,3 +222,49 @@ const (
 	editReplace editKind = iota
 	editInsert
 )
+
+// CommitStatus reports whether a Save replace operation is known to have
+// happened. It does not describe durability.
+type CommitStatus uint8
+
+const (
+	CommitNotCommitted CommitStatus = iota
+	CommitCommitted
+	CommitUnknown
+)
+
+// BackupPolicy controls whether Save creates a backup for an existing target.
+type BackupPolicy int
+
+const (
+	BackupDefault BackupPolicy = iota
+	BackupNone
+)
+
+// DurabilityPolicy controls how directory-sync capability limitations are
+// treated before replacing the target.
+type DurabilityPolicy int
+
+const (
+	DurabilityBestEffort DurabilityPolicy = iota
+	DurabilityStrict
+)
+
+// SaveOptions controls backup and directory durability behavior. The zero
+// value means BackupDefault and DurabilityBestEffort.
+type SaveOptions struct {
+	Backup     BackupPolicy
+	Durability DurabilityPolicy
+}
+
+// SaveResult describes the outcome of a Save, including whether the target
+// was replaced and whether the Document was refreshed to the actual target.
+// SnapshotCurrent=false on a loaded Document means Stale() is true.
+type SaveResult struct {
+	Status          CommitStatus
+	Changed         bool
+	SnapshotCurrent bool
+	Path            string
+	BackupPath      string
+	Warnings        []error
+}

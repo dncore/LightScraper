@@ -81,6 +81,7 @@ func Parse(systemDir string, data []byte) (*Document, error) {
 		RootAttributes: cloneAttributes(root.attrs),
 		SourceHash:     sha256.Sum256(data),
 		source:         append([]byte(nil), data...),
+		ops:            defaultSaveOperations(),
 	}
 
 	for _, child := range root.children {

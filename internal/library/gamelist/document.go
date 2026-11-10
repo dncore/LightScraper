@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"encoding/xml"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"unicode/utf8"
 )
@@ -59,60 +57,28 @@ var knownFields = map[string]struct{}{
 	"multidisk":        {},
 }
 
-// Load reads exactly <systemDir>/gamelist.xml. It never searches ES fallback
-// locations and never writes. A symlink at gamelist.xml is rejected rather than
-// followed.
-func Load(systemDir string) (*Document, error) {
-	if systemDir == "" {
-		return nil, fmt.Errorf("%w: system directory is required", ErrNotFound)
-	}
-	absolute, err := filepath.Abs(systemDir)
-	if err != nil {
-		return nil, fmt.Errorf("gamelist: resolve system directory: %w", err)
-	}
-	path := filepath.Join(absolute, "gamelist.xml")
-
-	info, err := os.Lstat(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("%w: %s", ErrNotFound, path)
-		}
-		if os.IsPermission(err) {
-			return nil, fmt.Errorf("%w: %s", ErrUnreadable, path)
-		}
-		return nil, fmt.Errorf("gamelist: stat %s: %w", path, err)
-	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		return nil, fmt.Errorf("%w: %s", ErrSymlink, path)
-	}
-	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("%w: %s", ErrNotRegular, path)
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsPermission(err) {
-			return nil, fmt.Errorf("%w: %s", ErrUnreadable, path)
-		}
-		return nil, fmt.Errorf("gamelist: read %s: %w", path, err)
-	}
-	if len(data) == 0 {
-		return nil, fmt.Errorf("%w: %s", ErrEmpty, path)
-	}
-	doc, err := Parse(absolute, data)
-	if err != nil {
-		return nil, err
-	}
-	doc.Path = path
-	return doc, nil
-}
-
 // EntryCount returns the number of recognised game and folder entries.
 func (d *Document) EntryCount() int {
 	if d == nil {
 		return 0
 	}
 	return len(d.Entries)
+}
+
+// Stale reports whether the Document must be reloaded before further edits or
+// saves. A stale Document may still expose its old read-only views.
+func (d *Document) Stale() bool {
+	return d != nil && d.stale
+}
+
+func (d *Document) markStale(reason error) {
+	if d == nil {
+		return
+	}
+	d.stale = true
+	if reason != nil {
+		d.staleReason = reason
+	}
 }
 
 // Field returns a copy of the requested field, using the entry namespace and an
@@ -137,6 +103,9 @@ func (d *Document) Field(entryIndex int, name string, occurrence int) (Field, bo
 func (d *Document) SetField(entryIndex int, name string, occurrence int, value string) error {
 	if d == nil {
 		return ErrEntryIndex
+	}
+	if d.stale {
+		return ErrDocumentStale
 	}
 	if _, ok := knownFields[name]; !ok {
 		return fmt.Errorf("%w: %q", ErrUnknownField, name)
@@ -224,6 +193,9 @@ func (d *Document) SetField(entryIndex int, name string, occurrence int, value s
 func (d *Document) AddField(entryIndex int, name, value string) error {
 	if d == nil {
 		return ErrEntryIndex
+	}
+	if d.stale {
+		return ErrDocumentStale
 	}
 	if !validFieldName(name) {
 		return fmt.Errorf("%w: %q", ErrInvalidFieldName, name)
@@ -313,6 +285,18 @@ func (d *Document) Marshal() ([]byte, error) {
 	if d == nil {
 		return nil, ErrEdit
 	}
+	if d.stale {
+		return nil, ErrDocumentStale
+	}
+	return d.marshal(d.SystemDir)
+}
+
+// marshal is the shared in-memory serializer. Save passes the private loaded
+// directory so public SystemDir changes cannot alter its validation context.
+func (d *Document) marshal(systemDir string) ([]byte, error) {
+	if d == nil {
+		return nil, ErrEdit
+	}
 	if len(d.edits) == 0 {
 		return append([]byte(nil), d.source...), nil
 	}
@@ -332,7 +316,7 @@ func (d *Document) Marshal() ([]byte, error) {
 		return nil, err
 	}
 
-	parsed, err := Parse(d.SystemDir, output)
+	parsed, err := Parse(systemDir, output)
 	if err != nil {
 		return nil, fmt.Errorf("%w: marshal produced invalid XML: %v", ErrEdit, err)
 	}

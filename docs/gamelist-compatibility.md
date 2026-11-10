@@ -1,14 +1,17 @@
-# gamelist.xml compatibility — LS-T003-A
+# gamelist.xml compatibility — LS-T003-A/T003-B
 
 ## Status
 
-This document describes the **T003-A in-memory core** only. It is implemented in
-`internal/library/gamelist`.
+This document describes the accepted **T003-A in-memory core** and the
+**T003-B safe-write layer** in `internal/library/gamelist`. The detailed write
+contract, platform policy and failure states are in
+[`gamelist-write.md`](gamelist-write.md).
 
-T003-A does **not** save, write, replace, back up, fsync, rename, lock, or detect
-concurrent writers. Nothing in this package opens a ROM, image, video, or media
-path. `Load` reads one file and `Marshal` returns bytes in memory. Disk
-persistence is T003-B and is not implemented.
+T003-A parse/source-span/round-trip behavior is unchanged. T003-B adds
+`Document.Save`, a same-directory temporary file, an exclusive backup, directory
+sync policy, replacement verification and actual-target snapshot refresh. It
+does not open a ROM, image, video, or media path. `Load` reads one file;
+`Marshal` still only returns bytes in memory. No cross-process lock is added.
 
 ## Scope
 
@@ -22,7 +25,9 @@ The package provides:
   source text preserved by construction;
 - in-memory `SetField` and `AddField` operations;
 - byte-splice `Marshal` that returns a new byte slice and never writes a file;
-- lexical ROM path classification; no filesystem access through `<path>`.
+- lexical ROM path classification; no filesystem access through `<path>`;
+- T003-B `Save` to the private loaded target with same-directory temp/backup,
+  directory-sync policy, commit verification and stale lifecycle.
 
 ## Upstream evidence
 
@@ -89,7 +94,7 @@ declarations are resolved with a lexical scope that is copied per element.
 Known entries/fields require the same namespace URI and local name as their
 parent. Fields in another namespace remain unknown and are preserved verbatim.
 
-## Reading API
+## Reading and writing API
 
 ```go
 func Load(systemDir string) (*Document, error)
@@ -100,6 +105,8 @@ func (d *Document) Field(entry int, name string, occurrence int) (Field, bool)
 func (d *Document) SetField(entry int, name string, occurrence int, value string) error
 func (d *Document) AddField(entry int, name, value string) error
 func (d *Document) Marshal() ([]byte, error)
+func (d *Document) Save(ctx context.Context, opts SaveOptions) (SaveResult, error)
+func (d *Document) Stale() bool
 ```
 
 `Load` reads exactly `<systemDir>/gamelist.xml`. It does not search
@@ -135,6 +142,23 @@ silently replace CDATA with escaped text. The original bytes remain untouched.
 
 `AddField` inserts a new plain-text field. It never rewrites existing nodes.
 
+## Saving and stale lifecycle
+
+T003-B `Save` revalidates the private loaded target (identity, hash, size, mode,
+mtime, system directory identity), writes a same-directory temp, creates an
+exclusive backup by default, optionally syncs the parent directory, replaces
+the target, verifies the resulting state, and refreshes the Document from the
+actual target before returning `SnapshotCurrent=true`.
+
+`SaveResult.Status` is `NotCommitted`, `Committed`, or `Unknown`.
+`Committed + SnapshotCurrent=false` and `Unknown` mark the Document stale;
+`SetField`, `AddField`, `Marshal` and `Save` then reject it with
+`ErrDocumentStale`. Only a fresh `Load` restores the lifecycle. Default
+`DurabilityBestEffort` treats an explicitly unsupported directory sync as a
+warning before replacement, but real I/O errors stop; `DurabilityStrict` stops
+on both. See [`gamelist-write.md`](gamelist-write.md) for the full state table and
+platform matrix.
+
 ## Marshal and validation
 
 `Marshal`:
@@ -147,7 +171,9 @@ silently replace CDATA with escaped text. The original bytes remain untouched.
 6. strictly re-parses the result;
 7. verifies root, entry count and each edited field value.
 
-It never writes to disk. `SetField` values are escaped with `xml.EscapeText`.
+`Marshal` itself never writes to disk. `SetField` values are escaped with `xml.EscapeText`.
+T003-B `Save` is the only write path; it uses an internal `marshal(loadedDir)`
+so public `SystemDir` mutation cannot change Save validation.
 Self-closing fields are converted to an open/text/close form only when that
 specific field is edited. `AddField` inserts before the entry's closing tag and
 reuses the existing indentation/line ending; it never reorders existing nodes.
@@ -184,19 +210,24 @@ gofmt -l internal/library/gamelist
 The suite covers official NES/C64 samples, BOM, multiline text, namespaces,
 CDATA, comments, unknown attributes/nodes, duplicate fields, empty and
 self-closing elements, original whitespace/order, path boundaries, symlink
-rejection, read-only behavior, malformed input and local edit spans. Fuzz tests
-assert that parse/marshal without edits is byte-identical and that successful
-field edits survive strict re-parsing.
+rejection, load/read-only rejection behavior, malformed input and local edit
+spans. T003-B adds Save tests for identity, temp/backup/Rename failure stages,
+directory-sync policy, stale lifecycle and actual-target snapshot refresh.
+Fuzz tests assert that parse/marshal without edits is byte-identical and that
+successful field edits survive strict re-parsing.
 
-## Known limitations / T003-B
+## Known limitations
 
-- No disk write, backup, fsync, rename, Windows API, or concurrent-writer
-  detection exists in T003-A.
+- TOCTOU between identity checks and `os.Rename` remains; no CAS or lock is
+  claimed.
 - `SetField` rejects CDATA/mixed-content fields rather than preserving CDATA
   form during mutation.
 - Only UTF-8 and UTF-8 BOM are supported; other encodings are rejected.
 - Only `<systemDir>/gamelist.xml` is read; ES fallback locations are not
   searched.
 - `AddField` is limited to known fields and non-self-closing entries.
-- Ownership/ACL preservation, atomic replacement, Windows failure recovery and
-  backup retention belong to T003-B and are not claimed here.
+- Windows ACL/owner/creation-time preservation is not claimed; only permission
+  bits are applied.
+- Directory sync support differs by platform/filesystem; network filesystems
+  are best-effort only.
+- Backups are intentionally retained; no automatic history cleanup exists.

@@ -4,15 +4,16 @@ LightScraper is a local-first desktop game library manager for retro game
 collectors. This repository currently contains the **LS-T001 desktop
 foundation** (Wails + React + TypeScript, minimal Go bridge, background event
 demo, initialized SQLite), the **LS-T002 standalone ROM scanner** (read-only,
-in-memory Batocera directory scanning), and the **LS-T003-A gamelist.xml core**
-(strict in-memory parsing, source-preserving views and local edits; no disk
-writes yet).
+in-memory Batocera directory scanning), the **LS-T003-A gamelist.xml core**
+(strict in-memory parsing, source-preserving views and local edits), and the
+**LS-T003-B safe-write layer** (same-directory temp/backup, verified replace and
+snapshot refresh).
 
-`gamelist.xml` persistence, metadata providers, media download, and the full
-product UI are not implemented yet. See
-[`docs/rom-scanner.md`](docs/rom-scanner.md) for the scanner boundary and
+Metadata providers, media download, and the full product UI are not implemented
+yet. See [`docs/rom-scanner.md`](docs/rom-scanner.md) for the scanner boundary,
 [`docs/gamelist-compatibility.md`](docs/gamelist-compatibility.md) for the
-gamelist boundary.
+gamelist boundary, and [`docs/gamelist-write.md`](docs/gamelist-write.md) for the
+save contract and platform policy.
 
 ## Stack
 
@@ -61,9 +62,10 @@ only that metadata table; business schemas will be added by later tasks.
 ├── internal/logging/               slog setup
 ├── internal/version/               Build-time name/version/commit metadata
 ├── internal/library/scanner/       Read-only Batocera ROM directory scanner
-├── internal/library/gamelist/      Source-preserving gamelist.xml parser/editor (T003-A)
+├── internal/library/gamelist/      Source-preserving gamelist.xml parser/editor/writer (T003-A/B)
 ├── docs/rom-scanner.md             Scanner semantics, evidence, and limitations
 ├── docs/gamelist-compatibility.md  gamelist XML/namespace/path preservation boundary
+├── docs/gamelist-write.md          Save/backup/replace/snapshot/platform policy
 ├── frontend/                       React + TypeScript source and Wails bindings
 ├── build/                          Wails platform metadata and app icons
 ├── .github/workflows/ci.yml        Tests, formatting, and platform build matrix
@@ -216,11 +218,19 @@ LS-T003-A adds `internal/library/gamelist`, a strict UTF-8 parser and
 source-span editor for Batocera/EmulationStation `gamelist.xml`. It preserves
 the original bytes, including BOM, namespaces, comments, CDATA, unknown nodes
 and attributes, duplicates and formatting; field edits are applied by byte
-splice in memory. It only reads `<systemDir>/gamelist.xml` and deliberately has
-no Save/write path yet.
+splice in memory.
+
+LS-T003-B adds `Document.Save`: it writes only the private loaded
+`<systemDir>/gamelist.xml`, uses a same-directory temporary file and an
+exclusive backup, distinguishes unsupported directory sync from real I/O
+errors, verifies the replacement result, and refreshes the Document from the
+actual target or marks it stale. It does not write ROM/media files, create
+missing targets, auto-clean backups, or add a lock.
 
 See [`docs/gamelist-compatibility.md`](docs/gamelist-compatibility.md) for the
-upstream evidence, fixture provenance, API, path semantics and T003-A limits.
+upstream evidence, preservation semantics and T003-A limits, and
+[`docs/gamelist-write.md`](docs/gamelist-write.md) for the T003-B save contract,
+state table, platform matrix and known risks.
 
 ## Current verification status
 
@@ -256,7 +266,8 @@ check, not a substitute for a manual launch on macOS or Windows.
 
 ## Task boundary
 
-LS-T002 adds the standalone ROM scanner. LS-T003-A adds only the in-memory
-gamelist parser/editor and its documentation; it does not add disk writes,
-ScreenScraper or other providers, media downloads, database library tables,
-worker pools, or a full library UI. Those require later tasks.
+LS-T002 adds the standalone ROM scanner. LS-T003-A adds the in-memory gamelist
+parser/editor; LS-T003-B adds safe writes for the already-loaded
+`gamelist.xml`. This task does not add ScreenScraper or other providers, media
+downloads, database library tables, worker pools, a lock, or a full library UI.
+Those require later tasks.

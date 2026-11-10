@@ -121,7 +121,10 @@ func isWindowsAbsolute(path string) bool {
 }
 
 func isWindowsDriveRelative(path string) bool {
-	return len(path) >= 2 && isASCIIAlpha(path[0]) && path[1] == ':'
+	if len(path) < 2 || !isASCIIAlpha(path[0]) || path[1] != ':' {
+		return false
+	}
+	return len(path) < 3 || (path[2] != '/' && path[2] != '\\')
 }
 
 func isASCIIAlpha(value byte) bool {
